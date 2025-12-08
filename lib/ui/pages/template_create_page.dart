@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import 'package:byin_app/ui/widgets/incubator_dropdown.dart';
 import 'package:byin_app/services/api_client.dart';
 import 'package:byin_app/features/incubators/incubator_provider.dart';
+import 'package:byin_app/features/incubators/incubator_model.dart';
+import 'package:byin_app/features/templates/template_provider.dart';
 
 class TemplateCreatePage extends StatefulWidget {
   const TemplateCreatePage({super.key});
@@ -16,20 +19,25 @@ class _TemplateCreatePageState extends State<TemplateCreatePage> {
   final _nameC = TextEditingController();
   final _descC = TextEditingController();
 
-  String? _incubatorId; // dipilih user
-  List<bool> _fan = List<bool>.filled(6, false);
-  List<bool> _lamp = List<bool>.filled(2, false);
+  // PILIHAN INKUBATOR (LOCAL STATE)
+  Incubator? _pickedInc;
+
+  // Toggle ON/OFF
+  final List<bool> _fan = List<bool>.filled(6, false);
+  final List<bool> _lamp = List<bool>.filled(2, false);
+
   bool _submitting = false;
 
-  IncubatorProvider get _incProv => context.read<IncubatorProvider>();
   ApiClient get _api => context.read<ApiClient>();
 
   @override
   void initState() {
     super.initState();
-    // auto-select incubator aktif bila ada
-    final selected = context.read<IncubatorProvider>().selected;
-    _incubatorId = selected?.id;
+    // Seed awal dari provider (jika ada pilihan global aktif)
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _pickedInc = context.read<IncubatorProvider>().selected;
+      setState(() {});
+    });
   }
 
   @override
@@ -41,7 +49,10 @@ class _TemplateCreatePageState extends State<TemplateCreatePage> {
 
   Future<void> _submit() async {
     if (!_form.currentState!.validate()) return;
-    if (_incubatorId == null) {
+
+    // Gunakan pilihan lokal; fallback ke provider bila masih null
+    final inc = _pickedInc ?? context.read<IncubatorProvider>().selected;
+    if (inc == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Pilih inkubator terlebih dahulu')),
       );
@@ -51,19 +62,22 @@ class _TemplateCreatePageState extends State<TemplateCreatePage> {
     setState(() => _submitting = true);
     try {
       await _api.createTemplate(
-        _incubatorId!,
+        inc.id,
         name: _nameC.text.trim(),
         description: _descC.text.trim().isEmpty ? null : _descC.text.trim(),
         fan: _fan.map((b) => b ? 1 : 0).toList(growable: false),
         lamp: _lamp.map((b) => b ? 1 : 0).toList(growable: false),
-        createdBy: 'dimas@contoh.com', // ganti bila sudah ada auth
+        createdBy: 'dimas@contoh.com', // ganti ketika sudah ada auth
       );
+
+      // refresh list template (jika halaman sebelumnya memakai TemplateProvider)
+      await context.read<TemplateProvider>().load();
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Template berhasil dibuat')),
       );
-      Navigator.pop(context, true); // -> return true agar list refresh
+      Navigator.pop(context, true); // kembalikan true agar caller bisa refresh juga
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -76,7 +90,6 @@ class _TemplateCreatePageState extends State<TemplateCreatePage> {
 
   @override
   Widget build(BuildContext context) {
-    final incs = context.watch<IncubatorProvider>().items; // pastikan provider expose items
     final theme = Theme.of(context);
 
     return Scaffold(
@@ -87,22 +100,15 @@ class _TemplateCreatePageState extends State<TemplateCreatePage> {
           child: ListView(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
             children: [
-              // Dropdown inkubator
-              Text('Inkubator', style: theme.textTheme.labelLarge),
-              const SizedBox(height: 6),
-              DropdownButtonFormField<String>(
-                value: _incubatorId,
-                decoration: _fieldDeco(),
-                items: [
-                  for (final i in incs)
-                    DropdownMenuItem(
-                      value: i.id,
-                      child: Text(i.name ?? i.code),
-                    )
-                ],
-                onChanged: (v) => setState(() => _incubatorId = v),
-                validator: (v) => v == null ? 'Wajib pilih inkubator' : null,
+              // Reuse komponen dropdown yang sama, mode LOCAL:
+              IncubatorDropdownCard(
+                useGlobal: false,
+                valueOverride: _pickedInc,
+                onChanged: (inc) => setState(() => _pickedInc = inc),
+                compact: true,
+                heading: 'Inkubator',
               ),
+
               const SizedBox(height: 16),
 
               // Nama
@@ -224,8 +230,10 @@ class _SwitchRow extends StatelessWidget {
           ),
           const SizedBox(width: 10),
           Expanded(
-            child: Text(label,
-                style: const TextStyle(fontWeight: FontWeight.w600)),
+            child: Text(
+              label,
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
           ),
           Switch(
             value: value,

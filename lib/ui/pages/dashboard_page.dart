@@ -3,10 +3,10 @@ import 'package:byin_app/features/telemetry/telemetry_series_provider.dart';
 import 'package:byin_app/ui/components/line_chart_card.dart';
 import 'package:byin_app/ui/components/mode_template_card.dart';
 import 'package:byin_app/ui/components/month_picker_row.dart';
-import 'package:byin_app/ui/widgets/incubator_drowdown.dart';
+import 'package:byin_app/ui/widgets/incubator_dropdown.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../features/telemetry/telemetry_provider.dart';
+import '../../features/telemetry/telemetry_provider.dart';
 
 class DashboardPage extends StatefulWidget {
   const DashboardPage({super.key});

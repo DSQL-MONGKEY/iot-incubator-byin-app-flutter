@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../features/control/control_provider.dart';
-import '../features/telemetry/telemetry_provider.dart';
+import '../../features/control/control_provider.dart';
+import '../../features/telemetry/telemetry_provider.dart';
 
 class ControlPage extends StatelessWidget {
   const ControlPage({super.key});

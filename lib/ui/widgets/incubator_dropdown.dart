@@ -4,7 +4,30 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 class IncubatorDropdownCard extends StatelessWidget {
-  const IncubatorDropdownCard({super.key});
+  /// Default true = perilaku seperti di Dashboard (ubah selection global).
+  /// Set false untuk dipakai sebagai field form (local selection via [onChanged]).
+  final bool useGlobal;
+
+  /// Nilai pilihan saat ini ketika [useGlobal] = false.
+  final Incubator? valueOverride;
+
+  /// Dipanggil ketika user memilih inkubator saat [useGlobal] = false.
+  final ValueChanged<Incubator>? onChanged;
+
+  /// Tampilan lebih ringkas untuk di form.
+  final bool compact;
+
+  /// Ubah teks heading (mis. "Inkubator" saat dipakai di form).
+  final String? heading;
+
+  const IncubatorDropdownCard({
+    super.key,
+    this.useGlobal = true,
+    this.valueOverride,
+    this.onChanged,
+    this.compact = false,
+    this.heading,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -15,8 +38,10 @@ class IncubatorDropdownCard extends StatelessWidget {
           st.bootstrap();
         }
 
+        final Incubator? sel = useGlobal ? st.selected : (valueOverride ?? st.selected);
+
         return InkWell(
-          onTap: () => _openPicker(context),
+          onTap: () => _openPicker(context, st),
           borderRadius: BorderRadius.circular(16),
           child: Container(
             decoration: BoxDecoration(
@@ -30,7 +55,7 @@ class IncubatorDropdownCard extends StatelessWidget {
                 ),
               ],
             ),
-            padding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
+            padding: EdgeInsets.fromLTRB(16, compact ? 8 : 12, 12, compact ? 8 : 12),
             child: Row(
               children: [
                 // left: title & status
@@ -38,12 +63,14 @@ class IncubatorDropdownCard extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Inkubator Aktif',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey.shade600,
-                            fontWeight: FontWeight.w500,
-                          )),
+                      Text(
+                        heading ?? (useGlobal ? 'Inkubator Aktif' : 'Inkubator'),
+                        style: TextStyle(
+                          fontSize: compact ? 11 : 12,
+                          color: Colors.grey.shade600,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
                       const SizedBox(height: 4),
                       if (st.loading)
                         const Text('Memuat...',
@@ -52,11 +79,11 @@ class IncubatorDropdownCard extends StatelessWidget {
                       else if (st.error != null)
                         Text('Gagal memuat',
                             style: TextStyle(
-                                color: Colors.red.shade400,
+                                color: Colors.redAccent,
                                 fontWeight: FontWeight.w600))
                       else
                         Text(
-                          st.selected?.name ?? 'Pilih inkubator',
+                          sel?.name ?? 'Pilih inkubator',
                           style: const TextStyle(
                               fontSize: 16, fontWeight: FontWeight.w700),
                         ),
@@ -64,16 +91,16 @@ class IncubatorDropdownCard extends StatelessWidget {
                       Row(
                         children: [
                           _StatusDot(
-                            color: st.selected?.isOnline == true
+                            color: (sel?.isOnline ?? false)
                                 ? const Color(0xFF2CC84D)
                                 : const Color(0xFF95A0B6),
                           ),
                           const SizedBox(width: 6),
                           Text(
-                            st.selected?.isOnline == true ? 'ONLINE' : 'OFFLINE',
+                            (sel?.isOnline ?? false) ? 'ONLINE' : 'OFFLINE',
                             style: TextStyle(
                               fontSize: 12,
-                              color: st.selected?.isOnline == true
+                              color: (sel?.isOnline ?? false)
                                   ? const Color(0xFF2CC84D)
                                   : Colors.grey.shade500,
                               fontWeight: FontWeight.w600,
@@ -94,8 +121,7 @@ class IncubatorDropdownCard extends StatelessWidget {
     );
   }
 
-  void _openPicker(BuildContext context) {
-    final st = context.read<IncubatorProvider>();
+  void _openPicker(BuildContext context, IncubatorProvider st) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: false,
@@ -106,8 +132,15 @@ class IncubatorDropdownCard extends StatelessWidget {
       builder: (_) {
         return _PickerSheet(
           items: st.items,
-          selected: st.selected,
-          onSelect: (x) => st.select(x),
+          selected: useGlobal ? st.selected : valueOverride,
+          // saat pilih:
+          onSelect: (x) {
+            if (useGlobal) {
+              st.select(x);                 // ubah global
+            } else {
+              onChanged?.call(x);           // local callback
+            }
+          },
           onRefresh: () => st.refresh(),
           loading: st.loading,
           error: st.error,
@@ -223,8 +256,7 @@ class _StatusDot extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: 10, height: 10,
-      decoration:
-          BoxDecoration(color: color, shape: BoxShape.circle),
+      decoration: BoxDecoration(color: color, shape: BoxShape.circle),
     );
   }
 }

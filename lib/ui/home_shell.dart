@@ -1,9 +1,9 @@
 
 
-import 'package:byin_app/ui/dashboard_page.dart';
-import 'package:byin_app/ui/incubators_page.dart';
-import 'package:byin_app/ui/settings_page.dart';
-import 'package:byin_app/ui/templates_page.dart';
+import 'package:byin_app/ui/pages/dashboard_page.dart';
+import 'package:byin_app/ui/pages/incubators_page.dart';
+import 'package:byin_app/ui/pages/settings_page.dart';
+import 'package:byin_app/ui/pages/templates_page.dart';
 import 'package:flutter/material.dart';
 
 class HomeShell extends StatefulWidget {

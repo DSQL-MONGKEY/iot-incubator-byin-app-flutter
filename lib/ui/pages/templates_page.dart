@@ -1,5 +1,5 @@
 import 'package:byin_app/ui/components/template_card.dart';
-import 'package:byin_app/ui/template_create_page.dart';
+import 'package:byin_app/ui/pages/template_create_page.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -52,8 +52,14 @@ class _TemplatesPageState extends State<TemplatesPage> {
                       ],
                     ),
                   ),
-                  IconButton.filledTonal(
+                  IconButton.filled(
                     tooltip: 'Tambah Template',
+                    color: Colors.white,
+                    style: ButtonStyle(
+                      backgroundColor: WidgetStateProperty.all<Color>(
+                        const Color(0xFF4D7CFE)
+                      ),
+                    ),
                     icon: const Icon(Icons.add_rounded),
                     onPressed: () async {
                       // pastikan daftar inkubator sudah ada

@@ -1,6 +1,3 @@
-
-
-
 import 'package:byin_app/features/incubators/incubator_model.dart';
 import 'package:byin_app/features/incubators/incubator_provider.dart';
 import 'package:byin_app/mqtt/mqtt_service.dart';
@@ -8,7 +5,7 @@ import 'package:byin_app/services/api_client.dart';
 import 'package:byin_app/ui/components/mode_select_sheet.dart';
 import 'package:byin_app/ui/components/pill_button.dart';
 import 'package:byin_app/ui/components/template_select_sheet.dart';
-import 'package:byin_app/ui/control_page.dart';
+import 'package:byin_app/ui/pages/control_page.dart';
 import 'package:byin_app/ui/utils/ui_helpers.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -106,7 +103,9 @@ class _ModeTemplateCardState extends State<ModeTemplateCard> {
                     Expanded(
                       child: PillButton(
                         label: 'MODE: $mode', 
-                        selected: true, onTap: _onChangeMode
+                        selected: true, 
+                        onTap: _onChangeMode,
+                        
                       ),
                     ),
                     const SizedBox(width: 12),

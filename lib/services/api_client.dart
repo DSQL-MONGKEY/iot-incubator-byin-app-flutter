@@ -106,6 +106,26 @@ class ApiClient {
     return data.map(Incubator.fromJson).toList();
   }
 
+  Future<void> createIncubator({
+    required String incubatorCode,
+    required String name,
+    required String status,
+    required String mode,
+    String? locationLabel,
+    String? fwVersion, // optional; null -> backend default
+  }) async {
+    final payload = <String, dynamic>{
+      'incubatorCode': incubatorCode,
+      'name': name,
+      'status': status,
+      'mode': mode,
+      if (locationLabel != null && locationLabel.isNotEmpty)
+        'locationLabel': locationLabel,
+      if (fwVersion != null && fwVersion.isNotEmpty) 'fwVersion': fwVersion,
+    };
+    await postJson('/incubators', payload);
+  }
+
   Future<void> createTemplate(
     String incubatorId, {
     required String name,
