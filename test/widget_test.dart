@@ -6,6 +6,7 @@
 // tree, read text, and verify that the values of widget properties are correct.
 
 import 'package:byin_app/mqtt/mqtt_service.dart';
+import 'package:byin_app/services/api_client.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -29,7 +30,7 @@ void main() {
   testWidgets('App renders without crashing', (WidgetTester tester) async {
     final fake = _FakeMqttService();
 
-    await tester.pumpWidget(MyApp(mqtt: fake));
+    await tester.pumpWidget(MyApp(mqtt: fake, api: ApiClient(baseUrl: 'http://10.0.2.2:3000/api/v1')));
     await tester.pump(); // biar build selesai
 
     // Sesuaikan dengan widget yang pasti ada di home (mis. DashboardPage)

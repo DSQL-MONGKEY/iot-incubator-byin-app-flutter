@@ -1,5 +1,6 @@
 import 'package:byin_app/features/incubators/incubator_model.dart';
 import 'package:byin_app/features/incubators/incubator_provider.dart';
+import 'package:byin_app/features/telemetry/telemetry_provider.dart';
 import 'package:byin_app/mqtt/mqtt_service.dart';
 import 'package:byin_app/services/api_client.dart';
 import 'package:byin_app/ui/components/mode_select_sheet.dart';
@@ -11,7 +12,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 class ModeTemplateCard extends StatefulWidget {
-  const ModeTemplateCard({ super.key });
+  final String? mode;
+  const ModeTemplateCard({ super.key, this.mode });
 
   @override
   State<ModeTemplateCard> createState() => _ModeTemplateCardState();
@@ -28,10 +30,12 @@ class _ModeTemplateCardState extends State<ModeTemplateCard> {
     final inc = _inc;
     if (inc == null) return;
 
-    final current = (inc.mode ?? 'AUTO').toUpperCase();
-    final chosen = await showModeSelectSheet(context, current);
+    final chosen = await showModeSelectSheet(context);
 
-    if (chosen == null || chosen == current) return;
+    final current = ((context.read<TelemetryProvider>().mode ?? inc.mode) ?? 'AUTO')
+    .toUpperCase();
+
+    if (chosen == null || chosen.toUpperCase() == current) return;
 
     final ok = await confirmDialog(
       context, 
@@ -51,6 +55,8 @@ class _ModeTemplateCardState extends State<ModeTemplateCard> {
       final gotAck = await _waitAckSafe(inc.code, type: 'control-mode');
 
       if (!mounted) return;
+      await context.read<IncubatorProvider>().refresh();
+      await context.read<TelemetryProvider>().refreshOnce();
 
       showToast(context, gotAck ? 'Mode diubah ke $chosen' : 'Mode diubah (tanpa ACK)');
 
@@ -81,7 +87,10 @@ class _ModeTemplateCardState extends State<ModeTemplateCard> {
   @override
   Widget build(BuildContext context) {
     final inc = context.watch<IncubatorProvider>().selected;
-    final mode = (inc?.mode ?? 'AUTO').toUpperCase();
+
+    // ✅ prioritas: hasil polling -> inc.mode
+    final polledMode = context.watch<TelemetryProvider>().mode;
+    final mode = (polledMode ?? inc?.mode ?? 'AUTO').toUpperCase();
 
     return AbsorbPointer(
       absorbing: _busy || inc == null,
@@ -105,7 +114,6 @@ class _ModeTemplateCardState extends State<ModeTemplateCard> {
                         label: 'MODE: $mode', 
                         selected: true, 
                         onTap: _onChangeMode,
-                        
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -146,7 +154,7 @@ class _ModeTemplateCardState extends State<ModeTemplateCard> {
   Future<bool> _waitAckSafe(String code, { required String type}) async {
     try {
       await _mqtt.ensureSubscribeAck(code);
-      return _mqtt.waitAck(type: type, timeout: const Duration(seconds: 5));
+      return _mqtt.waitAck(type: type, timeout: const Duration(seconds: 10));
     } catch (_) {
       return false;
     }

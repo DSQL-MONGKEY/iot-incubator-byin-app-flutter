@@ -1,7 +1,3 @@
-// state provider that have binding to MQTT
-
-// ignore_for_file: prefer_final_fields
-
 import 'package:byin_app/features/incubators/incubator_model.dart';
 import 'package:byin_app/mqtt/mqtt_service.dart';
 import 'package:byin_app/services/api_client.dart';

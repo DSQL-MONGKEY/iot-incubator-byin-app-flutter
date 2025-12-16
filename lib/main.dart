@@ -1,3 +1,4 @@
+import 'package:byin_app/features/settings/sensor_params_provider.dart';
 import 'package:byin_app/features/telemetry/telemetry_series_provider.dart';
 import 'package:byin_app/features/templates/template_provider.dart';
 import 'package:flutter/material.dart';
@@ -17,7 +18,7 @@ void main() {
   // ANDROID EMULATOR: 10.0.2.2 == host machine (localhost)
   final api  = ApiClient(baseUrl: 'http://10.0.2.2:3000/api/v1');
   final mqtt = MqttService(
-    broker:   'd847cd151fbe4985a1bc32cbd787651d.s1.eu.hivemq.cloud',
+    broker: 'd847cd151fbe4985a1bc32cbd787651d.s1.eu.hivemq.cloud',
     username: 'esp32.subscriber.publisher',
     password: 'DxESP32Rext',
   );
@@ -49,7 +50,11 @@ class MyApp extends StatelessWidget {
           create: (ctx) => TelemetrySeriesProvider(api, ctx.read<IncubatorProvider>()),
         ),
         ChangeNotifierProvider<TelemetryProvider>(
-          create: (ctx) => TelemetryProvider(ctx.read<MqttService>()),
+          create: (ctx) => TelemetryProvider(
+            ctx.read<ApiClient>(),
+            ctx.read<IncubatorProvider>(),
+            pollInterval: const Duration(seconds: 5),
+          ),
         ),
         ChangeNotifierProvider(
           create: (ctx) => TemplateProvider(
@@ -57,10 +62,13 @@ class MyApp extends StatelessWidget {
             ctx.read<IncubatorProvider>()
           ),
         ),
+        ChangeNotifierProvider(
+          create: (_) => SensorParamsProvider(api, mqtt),
+        ),
         ChangeNotifierProxyProvider<TelemetryProvider, ControlProvider>(
           create: (ctx) =>
-              ControlProvider(ctx.read<MqttService>(), ctx.read<TelemetryProvider>()),
-          update: (ctx, tel, _) => ControlProvider(ctx.read<MqttService>(), tel),
+              ControlProvider(ctx.read<ApiClient>(), ctx.read<IncubatorProvider>(), ctx.read<TelemetryProvider>()),
+          update: (ctx, tel, _) => ControlProvider(ctx.read<ApiClient>(), ctx.read<IncubatorProvider>(), tel),
         ),
       ],
       child: MaterialApp(

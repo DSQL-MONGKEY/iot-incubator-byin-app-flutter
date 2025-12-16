@@ -1,10 +1,9 @@
 import 'dart:convert';
 import 'package:byin_app/features/incubators/incubator_model.dart';
+import 'package:byin_app/features/settings/sensor_params_model.dart';
 import 'package:byin_app/features/telemetry/telemetry_series_model.dart';
 import 'package:byin_app/features/templates/template_model.dart';
 import 'package:http/http.dart' as http;
-
-
 
 class ApiClient {
   final String baseUrl;
@@ -170,5 +169,32 @@ extension TelemetrySeriesApi on ApiClient {
     final body = jsonDecode(res.body) as Map<String, dynamic>;
     final list = (body['data'] as List).cast<Map<String, dynamic>>();
     return list.map(TelemetrySeriesPoint.fromJson).toList();
+  }
+}
+
+
+extension SensorParamsApi on ApiClient {
+  // GET /incubators/{id}/params  -> return SensorParams? (bisa belum ada)
+  Future<SensorParams?> getSensorParams(String incubatorId) async {
+    final r = await getJson('/incubators/$incubatorId/params');
+    final data = r['data'];
+
+    if (data == null) return null;
+    return SensorParams.fromJson(Map<String, dynamic>.from(data));
+  }
+
+  // PUT /incubators/{id}/params (upsert)
+  Future<void> upsertSensorParams(String incubatorId, Map<String, dynamic> payload) async {
+    await patchJson('/incubators/$incubatorId/params', payload);
+  }
+}
+
+extension IncubatorManualControlApi on ApiClient {
+  Future<void> setFanManual(String incubatorId, List<int> fan) async {
+    await patchJson('/incubators/$incubatorId/fan', {'fan': fan});
+  }
+
+  Future<void> setLampManual(String incubatorId, List<int> lamp) async {
+    await patchJson('/incubators/$incubatorId/lamp', {'lamp': lamp});
   }
 }

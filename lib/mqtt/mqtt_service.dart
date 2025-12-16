@@ -6,60 +6,77 @@ import 'package:mqtt_client/mqtt_server_client.dart';
 
 class MqttService {
   final String broker;
-  final int port; // default 8883 (TLS native)
   final String username;
   final String password;
 
-  // BUKAN final -> agar bisa re-init saat fallback
   late MqttServerClient _client;
   final _rawStream = StreamController<_MqttMsg>.broadcast();
 
-  String incubatorCode = '001'; // diubah dari UI / storage
-  String? _currentTelemetryTopic;
+  String incubatorCode = '001';
+  String? _tpTelemetry;
+  String? _tpAck;
 
   MqttService({
     required this.broker,
-    this.port = 8883,
     required this.username,
     required this.password,
   });
 
-  String topicTelemetry() => '/psk/incubator/$incubatorCode/telemetry';
-  String topicMode()      => '/psk/incubator/$incubatorCode/control-mode';
-  String topicFan()       => '/psk/incubator/$incubatorCode/fan';
-  String topicLamp()      => '/psk/incubator/$incubatorCode/lamp';
+  // ---- Topics
+  String _telemetryTopic(String code) => '/psk/incubator/$code/telemetry';
+  String _ackTopic(String code)       => '/psk/incubator/$code/ack';
+  String topicTelemetry()             => _telemetryTopic(incubatorCode);
+  String topicMode()                  => '/psk/incubator/$incubatorCode/control-mode';
+  String topicFan()                   => '/psk/incubator/$incubatorCode/fan';
+  String topicLamp()                  => '/psk/incubator/$incubatorCode/lamp';
 
-  // ignore: library_private_types_in_public_api
   Stream<_MqttMsg> get messages => _rawStream.stream;
 
-  // ---------- CONNECT WITH TLS -> FALLBACK WSS ----------
   Future<void> connect() async {
     final cid = 'byin-app-${DateTime.now().millisecondsSinceEpoch}';
 
-    Future<void> _wireListener(MqttServerClient c) async {
+    void wireBase(MqttServerClient c) {
+      c.keepAlivePeriod = 30;
+      c.autoReconnect = true;
+      c.setProtocolV311();
+      c.logging(on: kDebugMode);
+
+      c.onConnected = () {
+        debugPrint('[MQTT] connected');
+        _resubscribeAll();
+      };
+      c.onDisconnected = () => debugPrint('[MQTT] disconnected');
+      c.onAutoReconnect = () => debugPrint('[MQTT] reconnecting…');
+      c.onAutoReconnected = () {
+        debugPrint('[MQTT] reconnected');
+        _resubscribeAll();
+      };
+
+      // DEV ONLY (hapus untuk produksi): terima semua sertifikat
+      // Signature di lib ini: (Object?) => bool
+      c.onBadCertificate = (Object? _) {
+        debugPrint('[MQTT] onBadCertificate (DEV) -> accept');
+        return true;
+      };
+
+      c.onSubscribed = (t) => debugPrint('[MQTT] subscribed: $t');
+      c.onUnsubscribed = (t) => debugPrint('[MQTT] unsubscribed: $t');
+      c.pongCallback = () => debugPrint('[MQTT] PINGRESP');
+    }
+
+    void wireListener(MqttServerClient c) {
       c.updates?.listen((events) {
         if (events.isEmpty) return;
         final rec = events.first;
         final topic = rec.topic;
         final msg = rec.payload as MqttPublishMessage;
         final payload = MqttPublishPayload.bytesToStringAsString(msg.payload.message);
+        if (kDebugMode) debugPrint('[MQTT] <= $topic ${payload.length}B');
         _rawStream.add(_MqttMsg(topic, payload));
       });
     }
 
-    void _applyBaseConfig(MqttServerClient c) {
-      c.keepAlivePeriod = 30;
-      c.autoReconnect = true;
-      c.setProtocolV311();
-      c.logging(on: kDebugMode);
-      c.onConnected = () => debugPrint('[MQTT] connected');
-      c.onDisconnected = () => debugPrint('[MQTT] disconnected');
-      c.onAutoReconnect = () => debugPrint('[MQTT] reconnecting…');
-      c.onAutoReconnected = () => debugPrint('[MQTT] reconnected');
-      c.connectionTimeoutPeriod = 10000; // 10s
-    }
-
-    MqttConnectMessage _connMsg() => MqttConnectMessage()
+    final connMsg = MqttConnectMessage()
         .startClean()
         .withClientIdentifier(cid)
         .withWillQos(MqttQos.atLeastOnce);
@@ -68,51 +85,64 @@ class MqttService {
     try {
       _client = MqttServerClient.withPort(broker, cid, 8883)
         ..secure = true;
-      _applyBaseConfig(_client);
-      _client.connectionMessage = _connMsg();
+      wireBase(_client);
+      _client.connectionMessage = connMsg;
 
       debugPrint('[MQTT] try TLS :8883 …');
       await _client.connect(username, password);
 
-      // sukses
-      _currentTelemetryTopic = topicTelemetry();
-      _client.subscribe(_currentTelemetryTopic!, MqttQos.atLeastOnce);
-      await _wireListener(_client);
-      debugPrint('[MQTT] OK TLS :8883, sub=$_currentTelemetryTopic');
+      wireListener(_client);
+      _resubscribeAll();
+      debugPrint('[MQTT] OK TLS :8883');
       return;
     } on Exception catch (e) {
-      debugPrint('[MQTT] TLS :8883 failed: $e');
+      final rc = _client.connectionStatus?.returnCode;
+      debugPrint('[MQTT] TLS :8883 failed: $e (rc=${rc?.name})');
       try { _client.disconnect(); } catch (_) {}
     }
 
-    // 2) Fallback ke WSS :8884 /mqtt (recommended di emulator)
+    // 2) Fallback WSS :8884 (path default lib = /mqtt -> cocok untuk HiveMQ Cloud)
     try {
       _client = MqttServerClient.withPort(broker, cid, 8884)
         ..secure = true
         ..useWebSocket = true
-        ..websocketPath = '/mqtt'
-        // ignore: invalid_use_of_protected_member
-        ..websocketProtocol = 'mqtt' as List<String>?;
-      _applyBaseConfig(_client);
-      _client.connectionMessage = _connMsg();
+        ..websocketProtocols = MqttClientConstants.protocolsSingleDefault; // ['mqtt']
+      wireBase(_client);
+      _client.connectionMessage = connMsg;
 
-      debugPrint('[MQTT] try WSS :8884 /mqtt …');
+      debugPrint('[MQTT] try WSS :8884 …');
       await _client.connect(username, password);
 
-      // sukses
-      _currentTelemetryTopic = topicTelemetry();
-      _client.subscribe(_currentTelemetryTopic!, MqttQos.atLeastOnce);
-      await _wireListener(_client);
-      debugPrint('[MQTT] OK WSS :8884, sub=$_currentTelemetryTopic');
+      wireListener(_client);
+      _resubscribeAll();
+      debugPrint('[MQTT] OK WSS :8884');
       return;
     } on Exception catch (e) {
+      final rc = _client.connectionStatus?.returnCode;
+      debugPrint('[MQTT] WSS :8884 failed: $e (rc=${rc?.name})');
       try { _client.disconnect(); } catch (_) {}
-      debugPrint('[MQTT] WSS :8884 failed: $e');
-      rethrow; // dua-duanya gagal -> lempar ke atas supaya ketahuan
+      rethrow; // biar kelihatan errornya di UI/log
     }
   }
 
-  // ---------- PUBLISH HELPERS ----------
+  void _resubscribeAll() {
+    // telemetry
+    final tpTel = _telemetryTopic(incubatorCode);
+    if (_tpTelemetry != tpTel) {
+      if (_tpTelemetry != null) {
+        try { _client.unsubscribe(_tpTelemetry!); } catch (_) {}
+      }
+      _client.subscribe(tpTel, MqttQos.atLeastOnce);
+      _tpTelemetry = tpTel;
+      debugPrint('[MQTT] sub telemetry -> $_tpTelemetry');
+    }
+    // ack
+    if (_tpAck != null) {
+      _client.subscribe(_tpAck!, MqttQos.atLeastOnce);
+      debugPrint('[MQTT] (re)sub ack -> $_tpAck');
+    }
+  }
+
   Future<void> publishJson(
     String topic,
     Map<String, dynamic> json, {
@@ -125,8 +155,7 @@ class MqttService {
     debugPrint('[MQTT] -> $topic $payload');
   }
 
-  Future<void> setMode(String mode) =>
-      publishJson(topicMode(), {'mode': mode});
+  Future<void> setMode(String mode) => publishJson(topicMode(), {'mode': mode});
 
   Future<void> setFan(List<int> fan, {bool ensureManual = true}) async {
     if (ensureManual) {
@@ -136,80 +165,53 @@ class MqttService {
     await publishJson(topicFan(), {'fan': fan, 'mode': 'MANUAL'});
   }
 
-  Future<void> setLamp(List<int> lamp) =>
-      publishJson(topicLamp(), {'lamp': lamp});
+  Future<void> setLamp(List<int> lamp) => publishJson(topicLamp(), {'lamp': lamp});
 
-  // ---------- LIFECYCLE ----------
   void dispose() {
     _rawStream.close();
     try { _client.disconnect(); } catch (_) {}
   }
 
-  // ---------- GANTI INCUBATOR CODE + RESUB ----------
   Future<void> changeIncubatorCode(String newCode) async {
     if (incubatorCode == newCode) return;
-
-    final oldTopic = _currentTelemetryTopic ?? topicTelemetry();
     incubatorCode = newCode;
-
     if (_client.connectionStatus?.state == MqttConnectionState.connected) {
-      try {
-        _client.unsubscribe(oldTopic);
-      } catch (_) {}
-      _currentTelemetryTopic = topicTelemetry();
-      _client.subscribe(_currentTelemetryTopic!, MqttQos.atLeastOnce);
-      debugPrint('[MQTT] resub -> $_currentTelemetryTopic');
+      _resubscribeAll();
     }
   }
 
-  String? _currentAckTopic;
-
   Future<void> ensureSubscribeAck(String code) async {
-    final tp = '/psk/incubator/$code/ack';
-
+    final tp = _ackTopic(code);
     if (_client.connectionStatus?.state == MqttConnectionState.connected) {
-      if (_currentAckTopic != tp) {
-        if (_currentAckTopic != null) {
-          try {
-            _client.unsubscribe(_currentAckTopic!);
-          } catch (_) {
-
-          }
+      if (_tpAck != tp) {
+        if (_tpAck != null) {
+          try { _client.unsubscribe(_tpAck!); } catch (_) {}
         }
-
         _client.subscribe(tp, MqttQos.atLeastOnce);
-        _currentAckTopic = tp;
+        _tpAck = tp;
+        debugPrint('[MQTT] sub ACK -> $_tpAck');
       }
     }
   }
 
-  Future<bool> waitAck({ required String type, Duration timeout = const Duration(seconds: 5) }) async {
+  Future<bool> waitAck({required String type, Duration timeout = const Duration(seconds: 10)}) async {
+    if (_tpAck == null) return false;
     try {
       final ok = await messages
-        .where((m) => m.topic == _currentAckTopic)
-        .map((m) {
-          try {
-            final j = jsonDecode(m.payload) as Map<String, dynamic>;
-
-            return (j['type'] == type);
-          } catch (_) {
-            return false;
-          }
-        })
-        .firstWhere((x) => x == true)
-        .timeout(timeout);
-    
+          .where((m) => m.topic == _tpAck)
+          .map((m) {
+            try {
+              final j = jsonDecode(m.payload) as Map<String, dynamic>;
+              return j['type'] == type;
+            } catch (_) { return false; }
+          })
+          .firstWhere((x) => x == true)
+          .timeout(timeout);
       return ok;
-    } catch (_) { return false; }
+    } catch (_) {
+      return false;
+    }
   }
-}
-
-extension on MqttServerClient {
-  set websocketProtocol(List<String>? websocketProtocol) {}
-
-  set connectionTimeoutPeriod(int connectionTimeoutPeriod) {}
-
-  set websocketPath(String websocketPath) {}
 }
 
 class _MqttMsg {
